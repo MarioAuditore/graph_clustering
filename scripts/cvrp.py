@@ -10,16 +10,34 @@ from random import randint
 
 
 class TestCVRP:
-    def __init__(self, G, max_steps, n_vehicles, weight='length', n_repeats = 10, time_limit = None, seed=0xAB0BA):
+    def __init__(self, G, max_steps, n_vehicles, weight='length', time_limit = None, seed=0xAB0BA):
         self.G = G
         self.weight = weight
         self.max_steps = max_steps
         self.time_limit = time_limit
-        self.n_repeats = n_repeats
         self.seed = seed
         self.P = n_vehicles
     
     def find_solution(self, d_matrix, capacities, demands, hub_id = 0):
+        '''
+        Solve CVRP problem
+
+        Params:
+        -------
+        d_matrix : numpy.array
+                   Distance matrix of graph
+        capacities : list
+                     Capacities of vehicles
+        demands : list
+                  Demand of each vertex
+        hub_id : int
+                 id of a vertex, which serves as hub (it will have zero demand and will serve as starting point)
+
+        Returns:
+        --------
+        np.array : Paths of CVRP solution
+        float : total length of the solution
+        '''
         # Define constraint model
         model = cp_model.CpModel()
 
@@ -27,15 +45,12 @@ class TestCVRP:
         Routes = {}  # x_ijp  - матрица маршрутов
         Y = {} # произведения ij
 
-        # d_matrix = self.d_matrix
         MAX_STEPS = self.max_steps
         N = len(d_matrix)
         P = len(capacities)
-        # capacities = self.capacities
-        # demands = self.demands
-        # hub_id = self.hub_id
+
         #____________________
-        # Создание переменных
+        # Variables creation
         for p in range(P):
             for r in range(MAX_STEPS):
                 for i in range(N):
@@ -52,12 +67,12 @@ class TestCVRP:
                             model.add(Y[p, r, i, j] == 0)
         
         #_____________________
-        # Ограничения на спрос
+        # Constraints on demands
         for p in range(P):
             model.add(sum(Routes[p, r, i] * demands[i] for i in range(N) for r in range(1, MAX_STEPS - 1)) <= capacities[p])
 
         #_________________________________
-        # ограничение из матрицы смежности
+        # Constraints from adjacency matrix
         for i in range(N):
             for j in range(N):
                 for r in range(MAX_STEPS - 1):
@@ -65,7 +80,7 @@ class TestCVRP:
                         if d_matrix[i, j] == 0 and not (i == hub_id and j == hub_id):
                             model.add(Routes[p, r + 1, j] <= 1 - Routes[p, r, i])
 
-        # x_iip = 0 - не ездить из города в себя
+        # x_iip = 0 - do not go from city to itself
         for i in range(N):
             if i != hub_id:
                 for r in range(MAX_STEPS - 1):
@@ -73,18 +88,17 @@ class TestCVRP:
                         model.add(Routes[p, r + 1, i] <= 1 - Routes[p, r, i])
 
         for p in range(P):
-            # изначально в хабе
+            # start in hub
             model.add(Routes[p, 0, hub_id] == 1)
-            # # на первом шаге выезжаем из него
-            # model.add(Routes[p, 1, hub_id] <= 1 - Routes[p, 0, hub_id])
 
+            # Only one place at a time
             for r in range(MAX_STEPS):
-                model.add(sum(Routes[p, r, i] for i in range(N)) == 1)  # на каржом роутсе только в одном месте
+                model.add(sum(Routes[p, r, i] for i in range(N)) == 1)  
 
-            # если на r-м шаге не оказались, то и дальше не едем; если на r-м шаге в хабе, то дальше не едем; если на r-м шаге оказались не в хабе, то едем дальше 
+            # If we came to hub, then we stay there
             for r in range(1, MAX_STEPS - 1):
-                model.add(Routes[p, r + 1, hub_id] >= Routes[p, r, hub_id])  #если приехали в хаб то остаемся в нем
-            # возвращаемся в хаб
+                model.add(Routes[p, r + 1, hub_id] >= Routes[p, r, hub_id])  
+            # We return to hub eventually
             model.add(sum(Routes[p, r, hub_id] for r in range(1, MAX_STEPS)) >= 1)
 
         # Ensure that every node is entered at least once
@@ -101,10 +115,7 @@ class TestCVRP:
         solver = cp_model.CpSolver()
         solver.parameters.log_search_progress = True
         solver.parameters.max_time_in_seconds = 60.0 * self.time_limit # in minutes
-        # callback = Callback(Routes, T_out, Car_Type, day, solver, objective_func)
-
-        # solution_collector = VarArraySolutionCollector(Routes)
-
+        
         status = solver.solve(model)
         print(status)
         if status == 3:
@@ -114,6 +125,24 @@ class TestCVRP:
     
 
     def test_cluster(self, clusters=None, hub_ids=None):
+        '''
+        Solve CVRP for each cluster separately in given clusterization. \
+        Capacities are generated to fit the demands, so that the task is feasible
+
+        Params:
+        -------
+        clusters : list[set[int]]
+                   List of sets containing ids of vertices
+        hub_ids : list[int]
+                  List of ids of vertices, which will serve as hubs
+
+        Returns:
+        --------
+        total_length : float
+                       Sum of total length of a solution in each cluster
+        paths : list[list[int]]
+                Paths of CVRP solution
+        '''
         def get_dist_matrix(G, weight='length'):
             # G = nx.convert_node_labels_to_integers(G)
             N = len(G.nodes)
@@ -180,12 +209,33 @@ class TestCVRP:
         return total_length, paths
     
     
-    def run_tests(self, clusters, hub_ids):
+    def run_tests(self, clusters, hub_ids, n_runs):
+        '''
+        Generate and run multiple CVRP tasks. Then average the total length \
+        of the solution over these runs.
+
+        Params:
+        -------
+        clusters : list[set[int]]
+                   List of sets containing ids of vertices
+        hub_ids : list[int]
+                  List of ids of vertices, which will serve as hubs
+        n_runs : int
+                 Number of runs to perform
+
+        Returns:
+        --------
+        mean : float
+               total length mean 
+        std : float
+              total length std
+        '''
+        
         # Set seed for reproducibility
         np.random.seed(self.seed)
         scores = []
         # Solve the problem multiple times
-        for trial in tqdm(range(self.n_repeats)):
+        for trial in tqdm(range(n_runs)):
             # Generate new demands
             demands = {node: np.random.randint(1, 5, 1)[0] for node in self.G.nodes}
             nx.set_node_attributes(self.G, demands, 'demand')
@@ -196,7 +246,27 @@ class TestCVRP:
         return np.mean(scores), np.std(scores)
     
     
-    def benchmark(self, cluster_alg, cluster_args):
+    def benchmark(self, cluster_alg, cluster_args, n_runs=5):
+        '''
+        Benchmark provided clustering algorithm on CVRP task.
+        
+        Params:
+        -------
+        cluster_alg : callable
+                      Clustering algorithm, which returns a list of clusters it selected
+        cluster_args : dict
+                       Dictionary of keywords to pass inside cluster_alg
+        n_runs : int
+                 Number of runs to perform for benchmark. \
+                 The results of these runs will be averged
+
+        Returns:
+        --------
+        mean : float
+               total length mean 
+        std : float
+              total length std
+        '''
         # Find clusters
         clusters = cluster_alg(self.G, **cluster_args)
         # Set the hubs
@@ -205,10 +275,24 @@ class TestCVRP:
             G_cluster = self.G.subgraph(cluster)
             hubs.append(nx.barycenter(G_cluster, weight=self.weight)[0])   
         # Compute performance
-        return self.run_tests(clusters, hubs)
+        return self.run_tests(clusters, hubs, n_runs)
 
 
     def plot_routes(self, solution, length, pos=None, show=False):
+        '''
+        Method for plotting CVRP solutions
+
+        Params:
+        -------
+        solution : list[list[int]]
+                   Paths of CVRP solution
+        length : float
+                 Total length of the solution
+        pos : Any
+              Layout for graph vertices
+        show : bool
+               Execute plt.show() or not
+        '''
 
         K = [
                 list(self.G.nodes), # dim = 0 : vertices
