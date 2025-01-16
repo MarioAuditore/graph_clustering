@@ -1,2 +1,2 @@
 # graph_clustering
-Graph clustering based on filtration process
+Graph clustering based on filtration process.
