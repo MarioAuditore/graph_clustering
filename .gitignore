@@ -4,6 +4,7 @@ __pycache__/
 data/
 animation/
 cache/
+experiments_archive/
 
 *.DS_Store
 *.html

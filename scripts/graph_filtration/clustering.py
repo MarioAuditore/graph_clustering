@@ -23,8 +23,7 @@ def dijkstra_neighbourhood(graph: nx.Graph,
                  start: int,
                  threshold: float,
                  max_degree: int = None,
-                 weight: str = 'length') -> \
-        tuple[float, list[int]]:
+                 weight: str = 'length'):
     
     if (threshold == 0) or (max_degree and graph.degree[start] >= max_degree):
         return 
@@ -60,6 +59,50 @@ def dijkstra_neighbourhood(graph: nx.Graph,
         if u != start and [start, u] not in graph.edges:
             graph.add_edge(start, u, length=vu_dist)
 
+
+# Function for building graph of k-nearest neighbours
+def dijkstra_knn(graph: nx.Graph,
+                 graph_knn: nx.Graph,
+                        start: int,
+                        k: int,
+                        weight:  str = 'length'
+                 ):
+    adjacency = graph._adj
+    c = count()
+    push = heappush
+    pop = heappop
+    dist = {}
+    fringe = []
+    
+    dist[start] = 0.0
+    push(fringe, (0.0, next(c), start))
+    visited = set()
+    counter = 0
+    while fringe:
+        (d, _, v) = pop(fringe)
+        # Add closest node except for the start point
+        if counter > 0:
+            if counter <= k:
+                graph_knn.add_edge(start, v, length=d)
+                counter += 1
+            else:
+                return
+        else:
+            counter += 1
+        # Find closest nodes in the neighbourhood
+        for u, e in adjacency[v].items():
+            vu_dist = d + e[weight]
+            if u not in dist or dist[u] > vu_dist:
+                dist[u] = vu_dist
+                push(fringe, (vu_dist, next(c), u))
+
+# Function wrap
+def build_knn_graph(G, k, weight='length'):
+    G_knn = nx.Graph()
+    for v in G.nodes:
+        dijkstra_knn(G, G_knn, v, k, weight=weight)
+    return G_knn
+        
 
 # Find the shortest path to a set of nodes 
 # and return the id of the closest node from set
