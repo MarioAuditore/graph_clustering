@@ -62,7 +62,10 @@ class TestCVRP:
                     for j in range(N):
                         Y[p, r, i, j] = model.new_bool_var(name=f'y_{p}_{r}_{i}_{j}')
                         if i != j:
-                            model.add_multiplication_equality(Y[p, r, i, j], [Routes[p, r, i], Routes[p, r + 1, j]])
+                            # model.add_multiplication_equality(Y[p, r, i, j], [Routes[p, r, i], Routes[p, r + 1, j]])
+                            model.AddBoolOr([Routes[p, r, i].Not(), Routes[p, r + 1, j].Not(), Y[p, r, i, j]])
+                            model.AddImplication(Y[p, r, i, j], Routes[p, r, i])
+                            model.AddImplication(Y[p, r, i, j], Routes[p, r + 1, j])
                         else:
                             model.add(Y[p, r, i, j] == 0)
         
@@ -104,12 +107,12 @@ class TestCVRP:
         # Ensure that every node is entered at least once
         for i in range(N):
             if i != hub_id:
-                model.add(sum(Routes[p, r, i] for p in range(P) for r in range(1, MAX_STEPS)) == 1)
+                model.add(sum(Routes[p, r, i] for p in range(P) for r in range(1, MAX_STEPS)) >= 1)
                 for p in range(P):
                     model.add(sum(Routes[p, r, i] for r in range(1, MAX_STEPS)) <= 1)
 
         # Minimize distance
-        objective_func = sum(Y[p, r, i, j] * d_matrix[i,j] for r in range(MAX_STEPS - 1) for i in range(N) for j in range(N) for p in range(P))
+        objective_func = sum(Y[p, r, i, j] * d_matrix[i, j] for r in range(MAX_STEPS - 1) for i in range(N) for j in range(N) for p in range(P))
         model.minimize(objective_func)
         
         solver = cp_model.CpSolver()
@@ -233,7 +236,7 @@ class TestCVRP:
         
         # Set seed for reproducibility
         np.random.seed(self.seed)
-        scores = []
+        score = 0.0
         # Solve the problem multiple times
         for trial in tqdm(range(n_runs)):
             # Generate new demands
@@ -241,9 +244,9 @@ class TestCVRP:
             nx.set_node_attributes(self.G, demands, 'demand')
             # Find solution
             total_length, _ = self.test_cluster(clusters, hub_ids)
-            scores.append(total_length)
+            score += total_length
 
-        return np.mean(scores), np.std(scores)
+        return score
     
     
     def benchmark(self, cluster_alg, cluster_args, n_runs=5):
