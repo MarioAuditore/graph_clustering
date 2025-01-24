@@ -6,6 +6,7 @@ from heapq import heappop, heappush
 from itertools import count
 
 from .graph_filtration import cycle_processing
+from .graph_filtration.clustering import filtration_merging, build_knn_graph, dijkstra_pfa_to_set
 
 from . import utils
 from tqdm import tqdm
@@ -19,6 +20,40 @@ from copy import deepcopy
 
 # --- Topological clustering ---
 
+def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5, weight='length'):
+    # Build k-nearest neighbour graph
+    G_knn = build_knn_graph(G, k, weight)
+    # Cluster it's triangles
+    cluster_base_set = filtration_merging(G_knn, q=q, weight=weight)
+    # Cluster the rest of the nodes, not present in triangles.
+    clusters_set = []
+    for base in cluster_base_set:
+        # If clusters are smaller than min_size, also re-label them.
+        clusters = [deepcopy(c) for c in base if len(c) > min_size]
+        # Collect nodes from clusters
+        used_vertices = set()
+        for cluster in clusters:
+            used_vertices.update(cluster)
+        # Find nodes, not present in clusters
+        unused_vertices = set(G.nodes) - used_vertices
+        # Now give cluster to each of them
+        for v in unused_vertices:
+            # Find closest vertex from a cluster
+            closest_node = dijkstra_pfa_to_set(G, v, used_vertices, weight=weight)
+            for id, c in enumerate(clusters):
+                # Assign to closest cluster
+                if closest_node in c:
+                    clusters[id].add(v)
+                    break
+        # Save the whole clusterization
+        clusters_set.append(clusters)
+
+    # TODO
+    # metric(clusters_set)
+    # utils.validate_cms(H, communities)
+
+    return clusters_set
+
 
 
 # --- Ordinary clustering algorithms ---
@@ -27,10 +62,7 @@ def louvain(H: nx.Graph, **params) -> list[set[int]]:
     '''
     Clustering by louvain communities
     '''
-    communities = nx.community.louvain_communities(H,
-                                                   seed=1534,
-                                                   weight='length',
-                                                   resolution=params['r'])
+    communities = nx.community.louvain_communities(H, **params)
     return utils.validate_cms(H, communities)
 
 

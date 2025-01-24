@@ -17,7 +17,25 @@ class TestCVRP:
         self.time_limit = time_limit
         self.seed = seed
         self.P = n_vehicles
+
+
+    def generate_demand(self, low=1, high=5):
+        if self.seed:
+            np.random.seed(self.seed)
+        demands = {node: np.random.randint(low, high, 1)[0] for node in self.G.nodes}
+        nx.set_node_attributes(self.G, demands, 'demand')
     
+
+    def generate_capacities(self, demands):
+        step = max(demands)
+        capacities = np.ones(self.P, dtype=int) * step
+
+        while demands.sum() > capacities.sum():
+            capacities[np.random.randint(0, self.P)] += step 
+        
+        return capacities
+
+
     def find_solution(self, d_matrix, capacities, demands, hub_id = 0):
         '''
         Solve CVRP problem
@@ -70,7 +88,7 @@ class TestCVRP:
                             model.add(Y[p, r, i, j] == 0)
         
         #_____________________
-        # Constraints on demands
+        # Constraints on capacity
         for p in range(P):
             model.add(sum(Routes[p, r, i] * demands[i] for i in range(N) for r in range(1, MAX_STEPS - 1)) <= capacities[p])
 
@@ -184,14 +202,9 @@ class TestCVRP:
             hub_id = original_to_order[hub_ids[i]]
             # Generate capacities and demands
             N = len(cluster)
-            capacities = np.ones(P, dtype=int)
-            # demands = np.ones(N, dtype=int) * 100
             demands = np.array([data[-1]['demand'] for data in G_cluster.nodes(data=True)])
             demands[hub_id] = 0
-            while demands.sum() > capacities.sum():
-                capacities += np.random.randint(0, 5, size=P)
-                # demands = np.random.randint(1, 5, size=N)
-                # demands[hub_id] = 0
+            capacities = self.generate_capacities(demands)
             
             # Compute CVRP
             solution, length = self.find_solution(d_matrix, capacities, demands, hub_id)
@@ -239,9 +252,8 @@ class TestCVRP:
         score = 0.0
         # Solve the problem multiple times
         for trial in tqdm(range(n_runs)):
-            # Generate new demands
-            demands = {node: np.random.randint(1, 5, 1)[0] for node in self.G.nodes}
-            nx.set_node_attributes(self.G, demands, 'demand')
+            # Generate demand in each vertex of G
+            self.generate_demand()
             # Find solution
             total_length, _ = self.test_cluster(clusters, hub_ids)
             score += total_length

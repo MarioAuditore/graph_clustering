@@ -136,7 +136,7 @@ def dijkstra_pfa_to_set(graph: nx.Graph,
         
 
 # Function to merge triangles
-def simplex_collapse(simplex_set, edges):
+def simplex_merging(simplex_set, edges):
     '''
     Function that merges abstract sets, based on common edge
 
@@ -193,7 +193,7 @@ def simplex_collapse(simplex_set, edges):
 
 
 # Clustering algorithm
-def filtration_clustering(G, weight='length', q=[0.1 * i for i in range(1, 11)]):
+def filtration_merging(G, q=[0.1 * i for i in range(1, 11)], weight='length'):
     '''
     Clusterization based on filtration process and simplex merging.\
     Provided with graph G and array of quantiles q, this function constructs\
@@ -212,7 +212,6 @@ def filtration_clustering(G, weight='length', q=[0.1 * i for i in range(1, 11)])
     # For the core of clusters
     clusters_base = []
     # For all clusterizations
-    clusters_set = []
     cluster_base_set = []
 
     # Get birth times of simplexes
@@ -242,42 +241,11 @@ def filtration_clustering(G, weight='length', q=[0.1 * i for i in range(1, 11)])
         else:
             new_simplexes = [set(s) for s in simplex_set if (thresholds[i - 1] < simplex_set[s]) and (simplex_set[s] <= thresholds[i])]
 
-        # # Get triangles at current threshold
-        # for i, (s, birth_time) in enumerate(triangles[thr_id:]):
-        #     if birth_time > level:
-        #         new_thr_id = i + thr_id
-        #         break
-
-        # # Get newborn simplexes
-        # if new_thr_id == thr_id:
-        #     new_simplexes = [data[0] for data in triangles[thr_id:]]
-        # else:
-        #     new_simplexes = [data[0] for data in triangles[thr_id:new_thr_id]]
-        # thr_id = new_thr_id
-
+        # TODO: perhaps k_clique_percolation is faster
         # Perform clustering: merge(clusters + merge(new_triangles))
-        clusters_base = simplex_collapse(clusters_base + simplex_collapse(deepcopy(new_simplexes), edges), edges)
+        clusters_base = simplex_merging(clusters_base + simplex_merging(deepcopy(new_simplexes), edges), edges)
         
-        # Cluster the rest of the nodes, not present in triangles
-        clusters = deepcopy(clusters_base)
-        used_vertices = set()
-        for cluster in clusters:
-            used_vertices.update(cluster)
-
-        unused_vertices = set(G.nodes) - used_vertices
-        
-        for v in unused_vertices:
-            # Find closest vertex from a cluster
-            closest_node = dijkstra_pfa_to_set(G, v, used_vertices, weight=weight)
-            for id, c in enumerate(clusters):
-                # Assign to closest cluster
-                if closest_node in c:
-                    clusters[id].add(v)
-                    break
-        
-        # Save the whole clusterization
-        clusters_set.append(clusters)
         # Save the core of clusterization produced by triangles
         cluster_base_set.append(clusters_base)
     
-    return clusters_set, cluster_base_set
+    return cluster_base_set
