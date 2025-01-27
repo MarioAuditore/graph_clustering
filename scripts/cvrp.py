@@ -8,7 +8,7 @@ from .graph_filtration.utils import plot_simplex
 from ortools.sat.python import cp_model
 from tqdm.notebook import tqdm
 from matplotlib import pyplot as plt
-from random import randint, sample
+from random import randint, sample, seed, shuffle
 
 
 class TestCVRP:
@@ -38,12 +38,17 @@ class TestCVRP:
     def generate_capacities(self, demands):
         if self.seed:
             np.random.seed(self.seed)
+            seed(self.seed)
 
-        step = max(demands)
-        capacities = np.ones(self.P, dtype=int) * step
+        capacities = np.ones(self.P, dtype=int) * max(demands)
+        shuffle(demands)
+        
+        step = int(len(demands) // self.P)
+        for i in range(self.P):
+            capacities[i] += sum(demands[i * step : min((i + 1) * step, len(demands))])
 
-        while demands.sum() > capacities.sum():
-            capacities[np.random.randint(0, self.P)] += step 
+        # while demands.sum() > capacities.sum():
+        #     capacities[np.random.randint(0, self.P)] += step 
         
         return capacities
 
@@ -159,10 +164,12 @@ class TestCVRP:
             cp_model.OPTIMAL : 'OPTIMAL'
         }
         
-        print(f'Solution status code: {status_codes[status]}')
+        print(f'Solution status: {status_codes[status]}')
 
         if status == 3:
-            print('Task is UNFEASIBLE')
+            print(f'capacities: {capacities} | {sum(capacities)}')
+            print(f'demands: {demands} | {sum(demands)}')
+            print(f'hub: {hub_id}')
             return None
         
         return np.reshape([solver.value(v) for v in Routes.values()], (P, MAX_STEPS , N)), solver.value(objective_func)
@@ -187,6 +194,13 @@ class TestCVRP:
         if subset:
             subset_ids = [original_to_order[id] for id in subset]
             d_matrix = np.array(g.distances(subset_ids, subset_ids, weights=self.weight))
+            
+            # re-numerate
+            original_to_order = {}
+            order_to_original = {}
+            for i, id in enumerate(subset):
+                original_to_order[id] = i
+                order_to_original[i] = id
         else:
             d_matrix = np.array(g.distances(weights=self.weight))
 
@@ -215,6 +229,7 @@ class TestCVRP:
         
         # Set seed
         np.random.seed(self.seed)
+        seed(self.seed)
         # number of vehicles
         P = self.P
 
@@ -324,7 +339,7 @@ class TestCVRP:
         clusters = cluster_alg(self.G, **cluster_args)
         # Set the hubs
         if hub_strategy:
-            hubs = hub_strategy(G, clusters)
+            hubs = hub_strategy(self.G, clusters)
         else:
             hubs = []
             for cluster in clusters:
