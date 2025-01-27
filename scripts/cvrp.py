@@ -1,22 +1,31 @@
 import networkx as nx
 import numpy as np
+import igraph as ig
+import os
 
 from .graph_filtration.utils import plot_simplex
 
 from ortools.sat.python import cp_model
 from tqdm.notebook import tqdm
 from matplotlib import pyplot as plt
-from random import randint
+from random import randint, sample
 
 
 class TestCVRP:
-    def __init__(self, G, max_steps, n_vehicles, weight='length', time_limit = None, seed=0xAB0BA):
+    def __init__(self, G, max_steps, n_vehicles, weight='length', num_workers = None, time_limit = None, seed=0xAB0BA, verbose = False):
+        
         self.G = G
         self.weight = weight
         self.max_steps = max_steps
         self.time_limit = time_limit
         self.seed = seed
         self.P = n_vehicles
+        self.verbose = verbose
+        
+        if num_workers:
+            self.num_workers = num_workers
+        else:
+            self.num_workers = os.cpu_count() - 1
 
 
     def generate_demand(self, low=1, high=5):
@@ -27,6 +36,9 @@ class TestCVRP:
     
 
     def generate_capacities(self, demands):
+        if self.seed:
+            np.random.seed(self.seed)
+
         step = max(demands)
         capacities = np.ones(self.P, dtype=int) * step
 
@@ -134,18 +146,54 @@ class TestCVRP:
         model.minimize(objective_func)
         
         solver = cp_model.CpSolver()
-        solver.parameters.log_search_progress = True
+        solver.parameters.num_workers = self.num_workers
+        solver.parameters.log_search_progress = self.verbose
         solver.parameters.max_time_in_seconds = 60.0 * self.time_limit # in minutes
         
         status = solver.solve(model)
-        print(status)
+        status_codes = {
+            cp_model.UNKNOWN : 'UNKNOWN',
+            cp_model.MODEL_INVALID : 'MODEL_INVALID',
+            cp_model.FEASIBLE : 'FEASIBLE',
+            cp_model.INFEASIBLE : 'INFEASIBLE',
+            cp_model.OPTIMAL : 'OPTIMAL'
+        }
+        
+        print(f'Solution status code: {status_codes[status]}')
+
         if status == 3:
+            print('Task is UNFEASIBLE')
             return None
-
+        
         return np.reshape([solver.value(v) for v in Routes.values()], (P, MAX_STEPS , N)), solver.value(objective_func)
-    
 
-    def test_cluster(self, clusters=None, hub_ids=None):
+
+    def get_dist_matrix(self, G=None, subset=None):
+        '''
+        Get pairwise distance matrix from provided Graph
+        '''
+        # TODO: можно переехать цеиком на igraph
+        if G is None:
+            G = self.G
+        g = ig.Graph.from_networkx(G)
+        
+        # re-numerate
+        original_to_order = {}
+        order_to_original = {}
+        for i, id in enumerate(G.nodes):
+            original_to_order[id] = i
+            order_to_original[i] = id
+        
+        if subset:
+            subset_ids = [original_to_order[id] for id in subset]
+            d_matrix = np.array(g.distances(subset_ids, subset_ids, weights=self.weight))
+        else:
+            d_matrix = np.array(g.distances(weights=self.weight))
+
+        return d_matrix, order_to_original, original_to_order
+
+
+    def test_cluster(self, clusters=None, hub_ids=None, subset_size=None):
         '''
         Solve CVRP for each cluster separately in given clusterization. \
         Capacities are generated to fit the demands, so that the task is feasible
@@ -164,22 +212,6 @@ class TestCVRP:
         paths : list[list[int]]
                 Paths of CVRP solution
         '''
-        def get_dist_matrix(G, weight='length'):
-            # G = nx.convert_node_labels_to_integers(G)
-            N = len(G.nodes)
-            d_matrix = np.zeros((N, N))
-            lengths = dict(nx.all_pairs_dijkstra_path_length(G, weight=weight))
-            # re-numerate
-            original_to_order = {}
-            order_to_original = {}
-            for i, id in enumerate(lengths):
-                original_to_order[id] = i
-                order_to_original[i] = id
-
-            for i in lengths:
-                for j in lengths[i]:
-                    d_matrix[original_to_order[i], original_to_order[j]] = lengths[i][j]
-            return d_matrix, order_to_original, original_to_order
         
         # Set seed
         np.random.seed(self.seed)
@@ -193,11 +225,17 @@ class TestCVRP:
         paths = []
         total_length = 0
         
-        for i, cluster in enumerate(clusters):
+        for i, cluster in enumerate(tqdm(clusters)):
             # Get graph of cluster
             G_cluster = self.G.subgraph(cluster)
+            # Choose a subset if needed
+            subset = None
+            if subset_size and len(cluster) > subset_size:
+                subset = sample(list(cluster), subset_size)
+                if hub_ids[i] not in subset:
+                    subset[0] = hub_ids[i]
             # Get it's pairwise distance
-            d_matrix, order_to_original, original_to_order = get_dist_matrix(G_cluster, self.weight)
+            d_matrix, order_to_original, original_to_order = self.get_dist_matrix(G_cluster, subset)
             # Choose hub
             hub_id = original_to_order[hub_ids[i]]
             # Generate capacities and demands
@@ -261,7 +299,7 @@ class TestCVRP:
         return score
     
     
-    def benchmark(self, cluster_alg, cluster_args, n_runs=5):
+    def benchmark(self, cluster_alg, cluster_args, hub_strategy=None, n_runs=5):
         '''
         Benchmark provided clustering algorithm on CVRP task.
         
@@ -285,10 +323,13 @@ class TestCVRP:
         # Find clusters
         clusters = cluster_alg(self.G, **cluster_args)
         # Set the hubs
-        hubs = []
-        for cluster in clusters:
-            G_cluster = self.G.subgraph(cluster)
-            hubs.append(nx.barycenter(G_cluster, weight=self.weight)[0])   
+        if hub_strategy:
+            hubs = hub_strategy(G, clusters)
+        else:
+            hubs = []
+            for cluster in clusters:
+                G_cluster = self.G.subgraph(cluster)
+                hubs.append(nx.barycenter(G_cluster, weight=self.weight)[0])   
         # Compute performance
         return self.run_tests(clusters, hubs, n_runs)
 

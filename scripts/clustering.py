@@ -20,16 +20,15 @@ from copy import deepcopy
 
 # --- Topological clustering ---
 
-def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5, weight='length'):
+def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5, weight='length', return_base=False):
     # Build k-nearest neighbour graph
     G_knn = build_knn_graph(G, k, weight)
     # Cluster it's triangles
     cluster_base_set = filtration_merging(G_knn, q=q, weight=weight)
     # Cluster the rest of the nodes, not present in triangles.
     clusters_set = []
-    for base in cluster_base_set:
-        # If clusters are smaller than min_size, also re-label them.
-        clusters = [deepcopy(c) for c in base if len(c) > min_size]
+    
+    def assign_closest_cluster(clusters):
         # Collect nodes from clusters
         used_vertices = set()
         for cluster in clusters:
@@ -45,14 +44,28 @@ def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5,
                 if closest_node in c:
                     clusters[id].add(v)
                     break
+        return clusters
+
+    # TODO make it parallel
+    for base in cluster_base_set:
+        # If clusters are smaller than min_size, also re-label them.
+        # clusters = [deepcopy(c) for c in base if len(c) > min_size]
+        clusters = [deepcopy(c) for c in base]
+        clusters = assign_closest_cluster(clusters)
+        # Now filter clusters that are too small
+        clusters = [c for c in clusters if len(c) > min_size]
+        clusters = assign_closest_cluster(clusters)
+
         # Save the whole clusterization
         clusters_set.append(clusters)
 
     # TODO
     # metric(clusters_set)
     # utils.validate_cms(H, communities)
-
-    return clusters_set
+    if return_base:
+        return clusters_set, cluster_base_set
+    else:
+        return clusters_set
 
 
 

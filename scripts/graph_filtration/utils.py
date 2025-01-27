@@ -169,7 +169,6 @@ def filtration(G, dim_k=2, weight='length'):
     '''
     # Construct basic simplexes
     
-    
     # K = [
     #     list(G.nodes), # dim = 0 : vertices
     #     [set(e) for e in G.edges], # dim = 1 : vertices
@@ -201,30 +200,6 @@ def filtration(G, dim_k=2, weight='length'):
     if dim_k > 2:
         for k in range(3, dim_k + 1):
             K = construct_k_simplex(K, dim_k=k)
-
-    # vertices = [[id, 0.0] for id in K[0]]
-    # edges = [[set(edge[:-1]), edge[-1][weight]] for edge in G.edges(data=True)]
-    # edges = sorted(
-    #     edges, 
-    #     key=lambda e : e[-1]
-    # )
-    # # Store simplexes alongside with their birth time
-    # simplicial_complex = [vertices, edges]
-    # # Now add simplexes from higher dimensions
-    # for k in range(2, len(K)):
-    #     # Get current simplexes of dim=k
-    #     subcomplex = K[k]
-    #     # Find their time as maximum birth time of their boundary with dim=k-1
-    #     simplex_time = [[
-    #         simplex,
-    #         find_simplex_birth(simplex, simplicial_complex[k - 1])
-    #     ] for simplex in subcomplex]
-    #     # Sort
-    #     simplex_time = sorted(
-    #         simplex_time, 
-    #         key=lambda s : s[-1]
-    #     )
-    #     simplicial_complex.append(simplex_time)
     
     return K
 
