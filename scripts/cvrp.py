@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 import igraph as ig
 import os
+from collections import defaultdict
 
 from .graph_filtration.utils import plot_simplex
 
@@ -391,3 +392,154 @@ class TestCVRP:
         plt.title(f'total length: {length}')
         if show:
             plt.show()
+
+
+# CVRP Hubs strategies
+def border_hubs(clusters, max_size, num_workers=None, time_limit=None, verbose=False):
+    # -------------------
+    # Part 1: preparation
+    # Label all nodes according to their clusters
+    clusters_labels = {i : c for i, c in enumerate(clusters)}
+    nodes_labels = {}
+    for i, c in enumerate(clusters):
+        for v in c:
+            nodes_labels[v] = i
+
+    # Find border nodes
+    border = {}
+    for i, cluster in enumerate(clusters):
+        for v in cluster:
+            # 1-hop neighbour
+            for hop_1 ,_ in G._adj[v].items():
+                if nodes_labels[hop_1] != i:
+                    if v not in border:
+                        border[v] = set([nodes_labels[v]])
+                    # Store what kind of clusters are nearby
+                    border[v].add(nodes_labels[hop_1])
+                
+                if v in border:
+                    # 2-hop neighbour
+                    for hop_2 ,_ in G._adj[hop_1].items():
+                        if nodes_labels[hop_2] != i:
+                            if v not in border:
+                                border[v] = set([nodes_labels[v]])
+                            # Store what kind of clusters are nearby
+                            border[v].add(nodes_labels[hop_2])
+
+    # Filter out points, whose combinations are too large
+    erase_list = []
+    for v in border:    
+        combination_size = 0
+        for label in border[v]:
+            combination_size += len(clusters[label])
+        
+        if max_size and combination_size > max_size:
+            erase_list.append(v)
+
+    for v in erase_list:
+        border.pop(v)
+
+    # Collect combinations of neighbours
+    cluster_combinations = defaultdict(lambda: set())
+    for v in border:
+        combination = tuple(sorted(border[v]))
+        cluster_combinations[combination].add(v)
+
+    # Find among them the one, with smallest distance to the whole set
+    for combination in cluster_combinations:
+        # Get union of all nodes from corresponding clusters
+        cluster_union = set()
+        for i in combination:
+            cluster_union.update(clusters_labels[i])
+        G_cluster = nx.subgraph(G, cluster_union)
+
+        if len(cluster_combinations[combination]) > 1:
+            # Search for node with minimal distance
+            min_dist = np.inf
+            for v in cluster_combinations[combination]:
+                d = dict(nx.single_source_dijkstra_path_length(G_cluster, v, weight='length'))
+                d_sum = np.sum([d[v] for v in d])
+                if d_sum < min_dist:
+                    d_mean = np.mean([d[v] for v in d])
+                    border_hub = v
+                    min_dist = d_sum
+
+            cluster_combinations[combination] = (border_hub, d_mean)
+        else:
+            v = list(cluster_combinations[combination])[0]
+            d = dict(nx.single_source_dijkstra_path_length(G_cluster, v, weight='length'))
+            d_mean = np.mean([d[v] for v in d])
+            cluster_combinations[combination] = (border_hub, d_mean)
+
+    # Now add variants with just centroids
+    # centroid_hubs = [None for i in range(len(clusters_labels))]
+    for i in clusters_labels:
+        G_cluster = G.subgraph(clusters_labels[i])
+        hub = nx.barycenter(G_cluster, weight='length')[0]
+        d = dict(nx.single_source_dijkstra_path_length(G_cluster, hub, weight='length'))
+        d_mean = np.mean([d[v] for v in d])
+        # cluster_combinations[i] = (hub, d_mean)
+        cluster_combinations[tuple([i])] = (hub, d_mean)
+
+    # --------------------------------
+    # Part 2: finding optimal solution
+    # Init optimization model
+    model = cp_model.CpModel()
+    # Store combinations as binary vectors
+    Covers = np.zeros((len(cluster_combinations), len(clusters)))
+    for i, combination in enumerate(cluster_combinations):
+        for j in combination:
+            Covers[i][j] = 1
+    # Store mean distances as one vector
+    Costs = np.array([d[-1] for _, d in cluster_combinations.items()])
+    # Some dimension parameters
+    N = len(clusters) # len of universe
+    P = len(cluster_combinations) # number of sets
+    # Variable to store the solution
+    Set_cover = {}
+
+    # Each set is a binary vector: [0,0,1,0,1,...]
+    for p in range(P):
+        Set_cover[p] = model.new_bool_var(name=f'cover_{p}')
+
+    # Sum should give precisely [1,1,1,1,1,...]
+    for i in range(N):
+        model.add(sum(Set_cover[p] * Covers[p][i] for p in range(P)) == 1)
+
+    # Minimize distance
+    objective_func = sum(Set_cover[p] * Costs[p] for p in range(P))
+    model.minimize(objective_func)
+
+    solver = cp_model.CpSolver()
+    if num_workers:
+        solver.parameters.num_workers = num_workers
+    solver.parameters.log_search_progress = verbose
+    if time_limit:
+        solver.parameters.max_time_in_seconds = 60.0 * time_limit # in minutes
+    
+    status = solver.solve(model)
+
+    status_codes = {
+                cp_model.UNKNOWN : 'UNKNOWN',
+                cp_model.MODEL_INVALID : 'MODEL_INVALID',
+                cp_model.FEASIBLE : 'FEASIBLE',
+                cp_model.INFEASIBLE : 'INFEASIBLE',
+                cp_model.OPTIMAL : 'OPTIMAL'
+            }
+
+    optimal_combination = []
+    solver_solution = [solver.value(v) for v in Set_cover.values()]
+    for i, cover in enumerate(cluster_combinations):
+        if solver_solution[i]:
+            optimal_combination.append(cover)
+
+    if verbose:
+        print(f'Solution status: {status_codes[status]}')
+        print(f'Optimal combination: {optimal_combination}')
+        print(f'Total mean distance: {solver.value(objective_func)}')
+    
+    optimal_hubs = []
+    for combination in optimal_combination:
+        optimal_hubs.append(cluster_combinations[combination][0])
+    
+    return optimal_hubs
