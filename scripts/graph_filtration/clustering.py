@@ -104,6 +104,7 @@ def build_knn_graph(G, k, weight='length'):
     return G_knn
         
 
+# TODO replace with nx.multi_source_dijkstra_path_length()
 # Find the shortest path to a set of nodes 
 # and return the id of the closest node from set
 def dijkstra_pfa_to_set(graph: nx.Graph,
@@ -152,6 +153,9 @@ def simplex_merging(simplex_set, edges):
 
     clusters = []
     visited = []
+
+    # TODO ПО любому надо проверять границы, как минимум это быстро для треугольников
+    # мб хранить в каком-о словаре границы симплекосв
 
     # Function to find matches
     def find_match(t_1):
@@ -230,12 +234,11 @@ def filtration_merging(G, q=[0.1 * i for i in range(1, 11)], weight='length'):
     # Choose the subset according to provided quantiles
     thresholds = np.quantile(levels, q=q)
 
-    prev_level = 0
-
     for i in tqdm(range(len(thresholds))):
         # Find edges at current threshold
         edges = [set(e) for e in simplicial_complex[1] if simplicial_complex[1][e] <= thresholds[i]]
 
+        # TODO sort these things and make as it was before with indexes -> O(N) total
         if i == 0:
             new_simplexes = [set(s) for s in simplex_set if simplex_set[s] <= thresholds[i]]
         else:

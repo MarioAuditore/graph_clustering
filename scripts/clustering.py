@@ -38,11 +38,16 @@ def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5,
         # Now give cluster to each of them
         for v in unused_vertices:
             # Find closest vertex from a cluster
-            closest_node = dijkstra_pfa_to_set(G, v, used_vertices, weight=weight)
+            closest_node = dijkstra_pfa_to_set(G, v, used_vertices, weight=weight)            
             for id, c in enumerate(clusters):
                 # Assign to closest cluster
                 if closest_node in c:
                     clusters[id].add(v)
+
+                    # TODO
+                    # if v == 1576825126:
+                    #     print(f'found 1576825126 | closest is {closest_node} with cluster {id}')
+
                     break
         return clusters
 

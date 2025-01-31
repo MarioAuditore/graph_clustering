@@ -39,16 +39,17 @@ class TestCVRP:
         if self.seed:
             np.random.seed(self.seed)
             seed(self.seed)
+        # Init vehicle capacities
+        max_demand = max(demands)
+        capacities = np.ones(self.P, dtype=int) * max_demand
+        # Randomly distribute demand among vehicles
+        # shuffle(demands)
+        # step = int(len(demands) // self.P)
+        # for i in range(self.P):
+        #     capacities[i] += sum(demands[i * step : min((i + 1) * step, len(demands))])
 
-        capacities = np.ones(self.P, dtype=int) * max(demands)
-        shuffle(demands)
-        
-        step = int(len(demands) // self.P)
-        for i in range(self.P):
-            capacities[i] += sum(demands[i * step : min((i + 1) * step, len(demands))])
-
-        # while demands.sum() > capacities.sum():
-        #     capacities[np.random.randint(0, self.P)] += step 
+        while max_demand * len(demands) >= capacities.sum():
+            capacities[np.random.randint(0, self.P)] += max_demand 
         
         return capacities
 
@@ -164,9 +165,9 @@ class TestCVRP:
             cp_model.OPTIMAL : 'OPTIMAL'
         }
         
-        print(f'Solution status: {status_codes[status]}')
-
+    
         if status == 3:
+            print(f'Solution status: {status_codes[status]}')
             print(f'capacities: {capacities} | {sum(capacities)}')
             print(f'demands: {demands} | {sum(demands)}')
             print(f'hub: {hub_id}')
@@ -278,7 +279,7 @@ class TestCVRP:
         return total_length, paths
     
     
-    def run_tests(self, clusters, hub_ids, n_runs):
+    def run_tests(self, clusters, hub_ids, n_runs, aggregation=np.mean, subset_size=None):
         '''
         Generate and run multiple CVRP tasks. Then average the total length \
         of the solution over these runs.
@@ -302,19 +303,19 @@ class TestCVRP:
         
         # Set seed for reproducibility
         np.random.seed(self.seed)
-        score = 0.0
+        scores = []
         # Solve the problem multiple times
-        for trial in tqdm(range(n_runs)):
+        for trial in range(n_runs):
             # Generate demand in each vertex of G
             self.generate_demand()
             # Find solution
-            total_length, _ = self.test_cluster(clusters, hub_ids)
-            score += total_length
+            score, path = self.test_cluster(clusters, hub_ids, subset_size)
+            scores.append(score)
 
-        return score
+        return aggregation(scores)
     
     
-    def benchmark(self, cluster_alg, cluster_args, hub_strategy=None, n_runs=5):
+    def benchmark(self, cluster_alg, cluster_args, hub_strategy=None, n_runs=10, aggregation=np.mean, subset_size=None):
         '''
         Benchmark provided clustering algorithm on CVRP task.
         
@@ -346,7 +347,7 @@ class TestCVRP:
                 G_cluster = self.G.subgraph(cluster)
                 hubs.append(nx.barycenter(G_cluster, weight=self.weight)[0])   
         # Compute performance
-        return self.run_tests(clusters, hubs, n_runs)
+        return self.run_tests(clusters, hubs, n_runs, aggregation, subset_size)
 
 
     def plot_routes(self, solution, length, pos=None, show=False):
