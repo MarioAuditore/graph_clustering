@@ -168,7 +168,7 @@ def filtration(G, dim_k=2, weight='length'):
                             third - triangles, etc.
     '''
     # Construct basic simplexes
-    
+    # TODO enable triangles
     # K = [
     #     list(G.nodes), # dim = 0 : vertices
     #     [set(e) for e in G.edges], # dim = 1 : vertices

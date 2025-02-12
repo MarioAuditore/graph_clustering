@@ -2,10 +2,6 @@ import numpy as np
 import networkx as nx
 import igraph as ig
 
-from heapq import heappop, heappush
-from itertools import count
-
-from .graph_filtration import cycle_processing
 from .graph_filtration.clustering import filtration_merging, build_knn_graph, dijkstra_pfa_to_set
 
 from . import utils
@@ -43,11 +39,6 @@ def filtration_clustering(G, q=[0.1 * i for i in range(1, 11)], k=7, min_size=5,
                 # Assign to closest cluster
                 if closest_node in c:
                     clusters[id].add(v)
-
-                    # TODO
-                    # if v == 1576825126:
-                    #     print(f'found 1576825126 | closest is {closest_node} with cluster {id}')
-
                     break
         return clusters
 

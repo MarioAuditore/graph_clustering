@@ -395,7 +395,7 @@ class TestCVRP:
 
 
 # CVRP Hubs strategies
-def border_hubs(clusters, max_size, num_workers=None, time_limit=None, verbose=False):
+def border_hubs(G, clusters, max_size, num_workers=None, time_limit=None, verbose=False):
     # -------------------
     # Part 1: preparation
     # Label all nodes according to their clusters

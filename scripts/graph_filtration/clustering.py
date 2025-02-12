@@ -62,31 +62,34 @@ def dijkstra_neighbourhood(graph: nx.Graph,
 
 # Function for building graph of k-nearest neighbours
 def dijkstra_knn(graph: nx.Graph,
-                 graph_knn: nx.Graph,
+                #  graph_knn: nx.Graph,
                         start: int,
                         k: int,
                         weight:  str = 'length'
                  ):
     adjacency = graph._adj
     c = count()
+    
     push = heappush
     pop = heappop
+    
     dist = {}
     fringe = []
+    new_edges = []
     
     dist[start] = 0.0
     push(fringe, (0.0, next(c), start))
-    visited = set()
+    
     counter = 0
     while fringe:
         (d, _, v) = pop(fringe)
         # Add closest node except for the start point
         if counter > 0:
             if counter <= k:
-                graph_knn.add_edge(start, v, length=d)
+                new_edges.append((start, v, d))
                 counter += 1
             else:
-                return
+                return new_edges
         else:
             counter += 1
         # Find closest nodes in the neighbourhood
@@ -99,8 +102,10 @@ def dijkstra_knn(graph: nx.Graph,
 # Function wrap
 def build_knn_graph(G, k, weight='length'):
     G_knn = nx.Graph()
+    new_edges = []
     for v in G.nodes:
-        dijkstra_knn(G, G_knn, v, k, weight=weight)
+        new_edges += dijkstra_knn(G, v, k, weight=weight)
+    G_knn.add_weighted_edges_from(new_edges, weight=weight)
     return G_knn
         
 
