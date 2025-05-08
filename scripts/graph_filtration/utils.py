@@ -1,8 +1,9 @@
+from itertools import combinations
+
+import igraph as ig
 import matplotlib.pyplot as plt
 import numpy as np
-from itertools import combinations
 from tqdm import tqdm
-import igraph as ig
 
 
 def plot_simplex(pos, K, show=False, alpha=0.7, ax=None):
@@ -41,14 +42,17 @@ def plot_simplex(pos, K, show=False, alpha=0.7, ax=None):
             start_point = pos[start_id]
             end_point = pos[end_id]
             if ax:
-                ax.plot([start_point[0], end_point[0]], [start_point[1], end_point[1]], 'c-', alpha=min(0.2, alpha - 0.2))
+                ax.plot([start_point[0], end_point[0]], [start_point[1],
+                        end_point[1]], 'c-', alpha=min(0.2, alpha - 0.2))
             else:
-                plt.plot([start_point[0], end_point[0]], [start_point[1], end_point[1]], 'c-', alpha=min(0.2, alpha - 0.2))
+                plt.plot([start_point[0], end_point[0]], [
+                         start_point[1], end_point[1]], 'c-', alpha=min(0.2, alpha - 0.2))
 
     # plot triangles
     if max_dim >= 3:
         for triangle in K[2]:
-            t = plt.Polygon(stack(triangle), color="blue", alpha=min(0.1, alpha - 0.5))
+            t = plt.Polygon(stack(triangle), color="blue",
+                            alpha=min(0.1, alpha - 0.5))
             if ax:
                 ax.gca().add_patch(t)
             else:
@@ -58,7 +62,7 @@ def plot_simplex(pos, K, show=False, alpha=0.7, ax=None):
         plt.show()
 
 
-def check_simplex_boundaries(simplex : list, simplicial_set : dict) -> bool:
+def check_simplex_boundaries(simplex: list, simplicial_set: dict) -> bool:
     '''
     Checks whether simplex exists in the given simplicial set\
     or not by checking the existence of all it's boundaries.
@@ -79,7 +83,7 @@ def check_simplex_boundaries(simplex : list, simplicial_set : dict) -> bool:
     return True
 
 
-# TODO: На больших графах медленная функция -> кластеризация медлит на Москве 
+# TODO: На больших графах медленная функция -> кластеризация медлит на Москве
 # Нужна индексация/хеширование
 # Узнал как можно индексировать: https://arxiv.org/pdf/1908.02518, page 6.
 def find_simplex_birth(simplex, simplicial_complex):
@@ -101,7 +105,8 @@ def find_simplex_birth(simplex, simplicial_complex):
     for b in boundaries:
         b = tuple(sorted(b))
         if b not in simplicial_complex:
-            raise Exception(f'Got simplex {simplex} with non-existent face {b}')
+            raise Exception(
+                f'Got simplex {simplex} with non-existent face {b}')
         else:
             # Choose the latest one
             if birth < simplicial_complex[b]:
@@ -144,8 +149,26 @@ def construct_k_simplex(K, dim_k, verbose=True):
                         if check_simplex_boundaries(k_simplex, k_faces):
                             # Save new simplex and it's birth time
                             simplex = tuple(sorted(k_simplex))
-                            K[dim_k][simplex] = find_simplex_birth(simplex, k_faces) #max(k_faces[face_a], k_faces[face_b])
+                            # max(k_faces[face_a], k_faces[face_b])
+                            K[dim_k][simplex] = find_simplex_birth(
+                                simplex, k_faces)
     return K
+
+
+def get_cobound(simplexes):
+    '''
+    Generates a map: bound -> incident simplex
+    '''
+    cobounds = {}
+    for s in simplexes:
+        bound_dim = len(s) - 1
+        for bound in combinations(s, bound_dim):
+            bound = tuple(sorted(bound))
+            if bound in cobounds:
+                cobounds[bound].append(s)
+            else:
+                cobounds[bound] = [s]
+    return cobounds
 
 
 def filtration(G, dim_k=2, weight='length'):
@@ -160,7 +183,7 @@ def filtration(G, dim_k=2, weight='length'):
             Highest dimension of simplexes to search for
     weight : str
              The edge attribute that holds the numerical value used for the edge weight.
-    
+
     Returns
     -------
     simplicial_complex : list[list]
@@ -200,6 +223,5 @@ def filtration(G, dim_k=2, weight='length'):
     if dim_k > 2:
         for k in range(3, dim_k + 1):
             K = construct_k_simplex(K, dim_k=k)
-    
-    return K
 
+    return K

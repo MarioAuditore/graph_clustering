@@ -5,6 +5,8 @@ data/
 animation/
 cache/
 experiments_archive/
+notebooks/
+transport_clustering_experiments/
 
 *.DS_Store
 *.html
