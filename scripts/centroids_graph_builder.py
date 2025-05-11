@@ -58,10 +58,11 @@ def build_center_graph(
     Function maps clusters in graph to their barycenters as representatives.\
     Then create new graph of barycenters.
     '''
-    
+
     x_graph = nx.Graph()
     cls2c = {}
-    iter = tqdm(enumerate(communities), total=len(communities), desc='find centroids') if log else enumerate(communities)
+    iter = tqdm(enumerate(communities), total=len(communities),
+                desc='find centroids') if log else enumerate(communities)
     for cls, _ in iter:
         gc = extract_cluster_list_subgraph(graph, [cls], communities)
         min_node = nx.barycenter(gc, weight='length')[0]
@@ -74,13 +75,14 @@ def build_center_graph(
 
     iter = tqdm(x_graph.nodes(), desc='find edges') if log else x_graph.nodes()
 
-    # кажется networkx умеет сам все пары перебрать: 
+    # кажется networkx умеет сам все пары перебрать:
     # https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.shortest_paths.weighted.all_pairs_dijkstra.html
     for u in iter:
         for v in cls2n[u]:
-            l = nx.single_source_dijkstra(graph, source=cls2c[u], target=cls2c[v], weight='length')[0]
+            l = nx.single_source_dijkstra(
+                graph, source=cls2c[u], target=cls2c[v], weight='length')[0]
             x_graph.add_edge(u, v, length=l)
-    
+
     return x_graph, cls2c
 
 
@@ -91,10 +93,12 @@ def extract_cluster_list_subgraph(graph: nx.Graph, cluster_number: list[int] | s
     if communities:
         return graph.subgraph(_iter_cms(cluster_number, communities))
     else:
-        nodes_to_keep = [node for node, data in graph.nodes(data=True) if data['cluster'] in cluster_number]
+        nodes_to_keep = [node for node, data in graph.nodes(
+            data=True) if data['cluster'] in cluster_number]
     return graph.subgraph(nodes_to_keep)
 
-def _iter_cms(cluster_number: list[int] | set[int], communities: list[set[int]]| tuple[set[int]]):
+
+def _iter_cms(cluster_number: list[int] | set[int], communities: list[set[int]] | tuple[set[int]]):
     '''
     Iterator to get set of nodes for set of specified communities
     '''

@@ -1,12 +1,12 @@
+import igraph as ig
 import networkx as nx
 import numpy as np
-import igraph as ig
-
 
 # Weird paper: https://arxiv.org/pdf/2005.04806
 # Main reference: https://arxiv.org/pdf/1205.6233
 
 # --- Utility functions ---
+
 
 def total_metric_wrapper(G, clusters, metric, weight='length', aggreg=np.mean):
     scores = []
@@ -115,6 +115,7 @@ def separability(G, cluster, weight='length'):
     return m_s / (c_s + 1e-10)
 
 # ODF-based functions
+
 
 def out_degree_fraction(G, v, cluster, weight):
     odf = 0

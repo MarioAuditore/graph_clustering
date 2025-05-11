@@ -1,4 +1,5 @@
-from random import random
+from copy import copy
+from random import random, seed
 from typing import Optional
 
 # import gudhi
@@ -13,7 +14,6 @@ from tqdm import tqdm
 class FiltrationClustering:
     def __init__(self,
                  graph: nx.Graph,
-                 max_filtration: Optional = None,
                  clique_size: int = 3,
                  seed: int = 42,
                  weight: str = 'length'):
@@ -32,13 +32,11 @@ class FiltrationClustering:
             String attribute to retrieve weight from edges.
         """
         self.original_graph = graph.copy()
+        # self.reference_graph = None
         self.weight = weight
         self.distance_distribution = [d[weight]
                                       for _, _, d in graph.edges(data=True)]
-        # if max_filtration:
-        #     self.max_filtration = max_filtration
-        # else:
-        #     self.max_filtration = max(self.distance_distribution)
+
         self.k = clique_size
         self.seed = seed
 
@@ -100,18 +98,18 @@ class FiltrationClustering:
         float
             CPM score
         """
+        # if self.reference_graph:
+        #     G = self.reference_graph
+        # else:
+        G = self.original_graph
         # Map node -> community index (assign first community if overlaps)
-        node_to_comm = {}
-        for i, comm in enumerate(communities):
-            for node in comm:
-                if node not in node_to_comm:
-                    node_to_comm[node] = i
+        node_to_comm = self._get_clustering(communities)
 
         # Sum edge weights inside communities
         e_c = [0.0] * len(communities)
         n_c = [len(comm) for comm in communities]
 
-        for u, v, data in self.original_graph.edges(data=True):
+        for u, v, data in G.edges(data=True):
             w = data.get(self.weight, 1.0) if self.weight else 1.0
             if node_to_comm.get(u) == node_to_comm.get(v):
                 c = node_to_comm[u]
@@ -124,6 +122,28 @@ class FiltrationClustering:
             cpm_score += e_c[i] - gamma * possible_edges
 
         return cpm_score
+
+    def _evaluate_clustering(self, clustering: dict, metric: str = 'modularity') -> float:
+        '''
+        Evaluate provided clustering
+        '''
+        # if self.reference_graph:
+        #     G = self.reference_graph
+        # else:
+        G = self.original_graph
+
+        if metric == 'modularity':
+            score = nx.community.modularity(
+                G,
+                self._get_communities(clustering),
+                weight=self.weight)
+        elif metric == 'cpm':
+            score = self._cpm_score(
+                self._get_communities(clustering))
+        else:
+            raise Exception(
+                f"Provided metric {metric}, valid ones are: 'modularity', 'cpm' ")
+        return score
 
     def cluster_at(self, quantile: float, save_clustering: bool = True):
         """
@@ -180,14 +200,7 @@ class FiltrationClustering:
             set(c) for c in nx.algorithms.community.k_clique_communities(G_eps, self.k)]
 
         # Map node -> community index
-        node_to_comm = {}
-        for i, comm in enumerate(communities):
-            for node in comm:
-                # Case of adjacent nodes
-                if node not in node_to_comm:
-                    node_to_comm[node] = i
-                elif random() > 0.5:
-                    node_to_comm[node] = i
+        node_to_comm = self._get_clustering(communities)
 
         # Assign unclustered nodes using original graph distances
         unclustered_nodes = set(range(self.n)) - set(node_to_comm.keys())
@@ -222,62 +235,38 @@ class FiltrationClustering:
 
         return clustering
 
-    def plot_clustering(self, epsilon):
-        """
-        Visualize clustering at filtration epsilon.
-
+    def _get_clustering(self, communities: list) -> dict:
+        '''
+        Convert list of sets to dict, mapping node to community label
         Parameters:
         -----------
-        epsilon : float
-            Filtration threshold, for which clustering is computed.
-        """
+        communities : list
+            List of sets of nodes, representing communities
+        '''
 
-        if epsilon not in self.clusterings:
-            raise ValueError(
-                f"Clustering at epsilon={epsilon} not computed yet. Run cluster_at(epsilon) first.")
+        seed(self.seed)
 
-        clustering = self.clusterings[epsilon]
+        # Map node -> community index
+        node_to_comm = {}
+        for i, comm in enumerate(communities):
+            for node in comm:
+                # Case of adjacent nodes
+                if node not in node_to_comm:
+                    node_to_comm[node] = i
+                elif random() > 0.5:
+                    node_to_comm[node] = i
+        return node_to_comm
 
-        # Assign colors to communities
-        communities = set(clustering.values())
-        num_comms = len(communities)
-        color_map = cm.get_cmap('tab20', num_comms)
-
-        # Map community to color index
-        comm_to_color = {comm: i for i, comm in enumerate(sorted(communities))}
-
-        # Node colors in original graph order
-        node_colors = [color_map(comm_to_color[clustering[node]])
-                       for node in self.original_graph.nodes()]
-
-        # Extract edges at epsilon (same as in cluster_at)
-        # simplices_at_eps = [
-        #     s for s in self.all_simplices if s[1] <= epsilon and len(s[0]) == 2]
-        # edges_at_eps = [tuple(s[0]) for s in simplices_at_eps]
-        edges_at_eps = [(node_a, node_b) for node_a, node_b,
-                        d in self.original_graph.edges(data=True) if d[self.weight] <= epsilon]
-
-        plt.figure(figsize=(8, 6))
-        nx.draw_networkx_nodes(self.original_graph, self.pos,
-                               node_color=node_colors, node_size=300, cmap=color_map)
-        # plot only filtration edges
-        nx.draw_networkx_edges(self.int_graph, self.pos,
-                               edgelist=edges_at_eps, alpha=0.5)
-        nx.draw_networkx_labels(self.original_graph, self.pos)
-        plt.title(f'FiltrationClustering at ε={epsilon:.4f}, k={self.k}')
-        plt.axis('off')
-        plt.show()
-
-    def _get_communities(self, epsilon: int):
+    def _get_communities(self, clustering: dict) -> list:
         """
         Convert dict of node_to_communities into a set of communities
 
         Parameters:
         -----------
-        epsilon : float
-            Filtration threshold, for which clustering is computed.
+        clustering : dict
+            Map from node to community
         """
-        clustering = self.clusterings[epsilon]
+        # clustering = self.clusterings[epsilon]
         communities = {}
         for node, label in clustering.items():
             if label in communities:
@@ -286,7 +275,7 @@ class FiltrationClustering:
                 communities[label] = [node]
         return [c for _, c in communities.items()]
 
-    def optimal_epsilon(self, metric: str = 'modularity'):
+    def optimal_epsilon(self, metric: str = 'modularity', verbose: bool = True):
         """
         Pick the best computed clustering with respect to modularity score.
 
@@ -302,30 +291,26 @@ class FiltrationClustering:
         """
         best_score = -np.inf
         best_epsilon = None
-        print('Finding best clustering')
-        for eps in tqdm(self.clusterings):
+        if verbose:
+            print('Finding best clustering')
+            loop_range = tqdm(self.clusterings)
+        else:
+            loop_range = self.clusterings
 
-            if metric == 'modularity':
-                score = nx.community.modularity(
-                    self.original_graph,
-                    self._get_communities(eps),
-                    weight=self.weight)
-            elif metric == 'cpm':
-                score = self._cpm_score(
-                    self._get_communities(eps))
-            else:
-                raise Exception(
-                    f"Provided metric {metric}, valid ones are: 'modularity', 'cpm' ")
+        for eps in loop_range:
+            score = self._evaluate_clustering(
+                self.clusterings[eps], metric=metric)
 
             if score > best_score:
                 best_score = score
                 best_epsilon = eps
-        print(f'Best threshold {best_epsilon:.4f} with score: {best_score}')
+        if verbose:
+            print(
+                f'Best threshold {best_epsilon:.4f} with score: {best_score}')
 
         return best_epsilon
 
-    # TODO parallel fails in comparison...ipynb due to gudhi's data structure, which does not allow copying
-    def cluster(self, metric: str = 'modularity', quantiles: list = np.linspace(1e-1, 1, 100), n_jobs: int = 7):
+    def cluster(self, metric: str = 'modularity', quantiles: list = np.linspace(1e-1, 1, 100), n_jobs: int = 7, verbose: bool = True):
         """
         Perform filtration clustering
 
@@ -346,11 +331,201 @@ class FiltrationClustering:
         print('Performing Filtration Clustering')
         epsilons = np.quantile(self.distance_distribution, quantiles)
         # Compute in parallel all clusterings
+        if verbose:
+            loop_range = tqdm(quantiles)
+        else:
+            loop_range = quantiles
         clusterings = Parallel(n_jobs=n_jobs)(delayed(
             lambda q: self.cluster_at(q, save_clustering=False)
-        )(q) for q in tqdm(quantiles))
+        )(q) for q in loop_range)
+
         # Save the results internally
         for i, epsilon in enumerate(epsilons):
             self.clusterings[epsilon] = clusterings[i]
         # Return best result
-        return self._get_communities(self.optimal_epsilon(metric=metric))
+        eps = self.optimal_epsilon(metric=metric, verbose=verbose)
+        optimal_clustering = self.clusterings[eps]
+        # Enhance with heuristics
+        optimal_clustering = self.border_heuristic(
+            optimal_clustering, metric=metric)
+        return self._get_communities(optimal_clustering)
+
+    # --- Post-production ---
+    def _find_border_nodes(self, clustering: dict):
+        """
+        Find nodes that have neighbors in other clusters.
+
+        Parameters:
+        -----------
+        graph : nx.Graph
+        clustering : dict {node: cluster_id}
+
+        Returns:
+        --------
+            Dict of border nodes with their border clusters
+        """
+        border_nodes = {}
+        for node in self.original_graph.nodes():
+            node_comm = clustering[node]
+            for neighbor in self.original_graph._adj[node]:
+                if clustering[neighbor] != node_comm:
+                    if node in border_nodes:
+                        border_nodes[node].add(clustering[neighbor])
+                    else:
+                        border_nodes[node] = set([clustering[neighbor]])
+        return border_nodes
+
+    def border_heuristic(self, clustering, metric='modularity', max_iter=10):
+        """
+        Refine clustering by reassigning border nodes to neighboring clusters if quality improves.
+
+        Parameters:
+        -----------
+        clustering : dict {node: cluster_id}
+            Clustering to optimize
+        metric : str
+            Metric to optimize: 'cpm' or 'modularity'
+        max_iter : int
+            Maximum number of iterations
+
+        Returns:
+        --------
+        dict {node: cluster_id} refined clustering
+        """
+        current_clustering = clustering.copy()
+
+        current_quality = self._evaluate_clustering(
+            current_clustering, metric=metric)
+
+        for _ in range(max_iter):
+            improved = False
+            border_nodes = self._find_border_nodes(current_clustering)
+
+            # Sort communities by size to prioritize small ones
+            # small_comms = [comm for comm, nodes in sorted_comms if len(nodes) < 10]  # threshold example
+
+            for node, border_communities in border_nodes.items():
+
+                for new_comm in border_communities:
+                    # Try moving node to new_comm
+                    temp_clustering = current_clustering.copy()
+                    temp_clustering[node] = new_comm
+
+                    temp_quality = self._evaluate_clustering(
+                        temp_clustering, metric=metric)
+
+                    if temp_quality > current_quality:
+                        current_clustering = temp_clustering
+                        current_quality = temp_quality
+                        improved = True
+                        break  # Move on to next node after improvement
+
+                if improved:
+                    # print(f'Score improved to {current_quality}')
+                    break  # Restart iteration after any improvement
+
+            if not improved:
+                break  # Stop if no improvement in this iteration
+
+        return current_clustering
+
+    # def clustering_local_filtration(self, clustering: dict, metric: str = 'modularity') -> dict:
+
+    #     # Sort communities by their size
+    #     communities = self._get_communities(clustering)
+    #     communities = sorted(communities, key=len)[::-1]
+    #     # Save original graph
+    #     original_graph = self.original_graph
+    #     for c in tqdm(communities):
+    #         # Get subgraph, representing cluster
+    #         G_cluster = self.original_graph.subgraph(c)
+    #         self.original_graph = G_cluster
+    #         subcluster_filtration = []
+    #         # Filter cluster
+    #         for q in np.linspace(0.1, 1, 100):
+    #             temp_clustering = copy(clustering)
+    #             subclustering = self.cluster_at(q, save_clustering=False)
+    #             # Save result in format of whole clustering
+    #             for node, label in subclustering.items():
+    #                 temp_clustering[node] = label
+    #             subcluster_filtration.append(temp_clustering)
+
+    #         # Now evaluate on original graph
+    #         self.original_graph = original_graph
+    #         # Init optimal solution (no changes by default)
+    #         optimal_clustering = copy(clustering)
+    #         best_score = self._evaluate_clustering(clustering, metric)
+    #         for temp_clustering in subcluster_filtration:
+    #             # Check if performance got better
+    #             temp_score = self._evaluate_clustering(temp_clustering, metric)
+    #             if temp_score > best_score:
+    #                 print(f'Improved to {temp_score}')
+    #                 best_score = temp_score
+    #                 optimal_clustering = temp_clustering
+    #         # Update clustering
+    #         clustering = optimal_clustering
+    #     return clustering
+
+    # --- Visualization ---
+
+    def plot_clustering(self, epsilon: Optional = None, communities: Optional = None):
+        """
+        Visualize clustering at filtration epsilon.
+
+        Parameters:
+        -----------
+        epsilon : float
+            Filtration threshold, for which clustering is computed.
+        communities : list
+            List of sets of nodes, representing communities
+        """
+
+        if communities is not None:
+            clustering = self._get_clustering(communities)
+
+        elif epsilon is not None:
+            if epsilon not in self.clusterings:
+                raise ValueError(
+                    f"Clustering at epsilon={epsilon} not computed yet. Run cluster_at(epsilon) first.")
+
+            clustering = self.clusterings[epsilon]
+        else:
+            raise ValueError(
+                'One of the parameters should be passed: eigher epsilon or communities')
+
+        # Assign colors to communities
+        communities = set(clustering.values())
+        num_comms = len(communities)
+        color_map = cm.get_cmap('tab20', num_comms)
+
+        # Map community to color index
+        comm_to_color = {comm: i for i, comm in enumerate(sorted(communities))}
+
+        # Node colors in original graph order
+        node_colors = [color_map(comm_to_color[clustering[node]])
+                       for node in self.original_graph.nodes()]
+
+        # Extract edges at epsilon (same as in cluster_at)
+        # simplices_at_eps = [
+        #     s for s in self.all_simplices if s[1] <= epsilon and len(s[0]) == 2]
+        # edges_at_eps = [tuple(s[0]) for s in simplices_at_eps]
+        plt.figure(figsize=(8, 6))
+
+        if epsilon:
+            plt.title(f'FiltrationClustering at ε={epsilon:.4f}, k={self.k}')
+            edges = [(node_a, node_b) for node_a, node_b,
+                     d in self.original_graph.edges(data=True) if d[self.weight] <= epsilon]
+        else:
+            plt.title('FiltrationClustering')
+            edges = [(node_a, node_b) for node_a, node_b,
+                     d in self.original_graph.edges(data=True)]
+
+        nx.draw_networkx_nodes(self.original_graph, self.pos,
+                               node_color=node_colors, node_size=300, cmap=color_map)
+        # plot only filtration edges
+        nx.draw_networkx_edges(self.int_graph, self.pos,
+                               edgelist=edges, alpha=0.5)
+        nx.draw_networkx_labels(self.original_graph, self.pos)
+
+        plt.axis('off')
+        plt.show()

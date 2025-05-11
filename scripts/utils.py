@@ -1,13 +1,14 @@
 import os
+from random import choice, sample
 
 import networkx as nx
 import numpy as np
-from random import choice, sample
 
 
 # оптимальное количество кластеров из статьи
 def get_opt_cluster_count(nodes: int) -> int:
-    alpha = 8.09 * (nodes ** (-0.48)) * (1 - 19.4 / (4.8 * np.log(nodes) + 8.8)) * nodes
+    alpha = 8.09 * (nodes ** (-0.48)) * (1 - 19.4 /
+                                         (4.8 * np.log(nodes) + 8.8)) * nodes
     return int(alpha)
 
 
@@ -25,6 +26,7 @@ def validate_cms(H: nx.Graph, communities: list[set[int]] | tuple[set[int]]) -> 
             H.nodes()[j]['cluster'] = i
     # assert nx.community.is_partition(H,cls)
     return cls
+
 
 def get_node_for_initial_graph_v2(graph: nx.Graph):
     nodes = list(graph.nodes())
@@ -46,7 +48,7 @@ def get_path(folder: str, name: str):
     return os.path.join(path, name)
 
 
-def cut_subgraph(G, subgraph_size = 300, weight = 'length'):
+def cut_subgraph(G, subgraph_size=300, weight='length'):
 
     G_subgraph = G.copy()
 
@@ -56,10 +58,11 @@ def cut_subgraph(G, subgraph_size = 300, weight = 'length'):
         # If it actually has neighbourhood
         if G_subgraph.degree[v] != 1:
             # Remove all neighbours with degree 1
-            hanging_nodes = [n for n in G_subgraph._adj[v] if G_subgraph.degree[n] == 1]
+            hanging_nodes = [n for n in G_subgraph._adj[v]
+                             if G_subgraph.degree[n] == 1]
             for n in hanging_nodes:
                 G_subgraph.remove_node(n)
-        
+
             # If it breaks connectivity
             neighbourhood = G_subgraph._adj[v]
             # TODO Ugly code, but uses nx.has_path
@@ -71,11 +74,12 @@ def cut_subgraph(G, subgraph_size = 300, weight = 'length'):
                         # If only one path exists
                         if not nx.has_path(G_buf, n_1, n_2):
                             # Compute the distance between them
-                            edge_weigh = nx.path_weight(G_subgraph, (n_1, v, n_2), weight=weight)
+                            edge_weigh = nx.path_weight(
+                                G_subgraph, (n_1, v, n_2), weight=weight)
                             # Add an edge
                             G_buf.add_edge(n_1, n_2)
                             G_subgraph.add_edge(n_1, n_2)
-                            G_subgraph[n_1][n_2].update({weight : edge_weigh})
+                            G_subgraph[n_1][n_2].update({weight: edge_weigh})
             del G_buf
         # Finally remove the node from Graph
         G_subgraph.remove_node(v)
