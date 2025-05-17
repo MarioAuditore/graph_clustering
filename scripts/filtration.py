@@ -69,7 +69,7 @@ class FiltrationClustering:
 
     def _compute_shortest_path_distances(self):
         lengths = dict(nx.all_pairs_dijkstra_path_length(
-            self.int_graph, weight='weight'))
+            self.int_graph, weight=self.weight))
         dist_matrix = np.full((self.n, self.n), np.inf)
         for i in range(self.n):
             dist_matrix[i, i] = 0.0
@@ -428,43 +428,6 @@ class FiltrationClustering:
                 break  # Stop if no improvement in this iteration
 
         return current_clustering
-
-    # def clustering_local_filtration(self, clustering: dict, metric: str = 'modularity') -> dict:
-
-    #     # Sort communities by their size
-    #     communities = self._get_communities(clustering)
-    #     communities = sorted(communities, key=len)[::-1]
-    #     # Save original graph
-    #     original_graph = self.original_graph
-    #     for c in tqdm(communities):
-    #         # Get subgraph, representing cluster
-    #         G_cluster = self.original_graph.subgraph(c)
-    #         self.original_graph = G_cluster
-    #         subcluster_filtration = []
-    #         # Filter cluster
-    #         for q in np.linspace(0.1, 1, 100):
-    #             temp_clustering = copy(clustering)
-    #             subclustering = self.cluster_at(q, save_clustering=False)
-    #             # Save result in format of whole clustering
-    #             for node, label in subclustering.items():
-    #                 temp_clustering[node] = label
-    #             subcluster_filtration.append(temp_clustering)
-
-    #         # Now evaluate on original graph
-    #         self.original_graph = original_graph
-    #         # Init optimal solution (no changes by default)
-    #         optimal_clustering = copy(clustering)
-    #         best_score = self._evaluate_clustering(clustering, metric)
-    #         for temp_clustering in subcluster_filtration:
-    #             # Check if performance got better
-    #             temp_score = self._evaluate_clustering(temp_clustering, metric)
-    #             if temp_score > best_score:
-    #                 print(f'Improved to {temp_score}')
-    #                 best_score = temp_score
-    #                 optimal_clustering = temp_clustering
-    #         # Update clustering
-    #         clustering = optimal_clustering
-    #     return clustering
 
     # --- Visualization ---
 
