@@ -7,6 +7,7 @@ cache/
 experiments_archive/
 notebooks/
 transport_clustering_experiments/
+ground_truth_clustering_experiment/data/Cisco_22_networks
 
 *.DS_Store
 *.html
