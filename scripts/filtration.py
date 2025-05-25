@@ -1,10 +1,11 @@
 from copy import copy
 from random import random, seed
+from itertools import combinations
 from typing import Optional
 
-# import gudhi
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+import igraph as ig
 import networkx as nx
 import numpy as np
 from joblib import Parallel, delayed
@@ -31,56 +32,77 @@ class FiltrationClustering:
         weight : str
             String attribute to retrieve weight from edges.
         """
-        self.original_graph = graph.copy()
-        # self.reference_graph = None
+        # TODO: Replace internal graph with igraph?
+        self.graph = graph.copy()
+        self.seed = seed
         self.weight = weight
         self.distance_distribution = [d[weight]
                                       for _, _, d in graph.edges(data=True)]
 
+        # Set clique information
         self.k = clique_size
-        self.seed = seed
+        self.triangulation = self._compute_triangulation()
+        self.triangle_cobound = self._compute_cobound()
 
         # Map original nodes to integer IDs and back
         self.node_to_id = {node: i for i, node in enumerate(graph.nodes())}
         self.id_to_node = {i: node for node, i in self.node_to_id.items()}
-        self.n = len(self.node_to_id)
-
-        # Build internal graph with integer nodes and weighted edges
-        self.int_graph = nx.Graph()
-        for u, v, data in graph.edges(data=True):
-            w = data.get(weight, 1.0)  # default weight 1.0 if missing
-            self.int_graph.add_edge(
-                self.node_to_id[u], self.node_to_id[v], weight=w)
 
         # Compute shortest path distance matrix
         self.dist_matrix = self._compute_shortest_path_distances()
 
-        # Build Rips complex once
-        # self.simplex_tree = self._build_rips_complex()
-
-        # # Get all simplices with filtration values
-        # self.all_simplices = list(self.simplex_tree.get_filtration())
-
         # Precompute layout for visualization (using original graph)
-        self.pos = nx.spring_layout(self.original_graph, seed=self.seed)
+        self.pos = nx.spring_layout(self.graph, seed=self.seed)
 
         # Storage for clustering results: dict of eps -> dict node->community
         self.clusterings = {}
 
+    def _compute_triangulation(self,):
+        # Find all triangles
+        id_to_node = {id: node for id, node in enumerate(self.graph.nodes)}
+        g = ig.Graph.from_networkx(self.graph)
+        triangulation = [tuple([id_to_node[v] for v in t])
+                         for t in g.list_triangles()]
+
+        clique_birth = {}
+        for t in triangulation:
+            max_weight = 0
+            for u, v in combinations(t, 2):
+                if self.graph.has_edge(u, v):
+                    max_weight = max(
+                        max_weight, self.graph[u][v][self.weight])
+            clique_birth[t] = max_weight
+        # Save results
+        return clique_birth
+
+    def _compute_cobound(self,):
+        co_bound = {}
+        for t in self.triangulation:
+            for e in combinations(t, 2):
+                e = tuple(sorted(e))
+                if e in co_bound:
+                    co_bound[e].add(tuple(sorted(t)))
+                else:
+                    co_bound[e] = {tuple(sorted(t))}
+        return co_bound
+
     def _compute_shortest_path_distances(self):
         lengths = dict(nx.all_pairs_dijkstra_path_length(
-            self.int_graph, weight=self.weight))
-        dist_matrix = np.full((self.n, self.n), np.inf)
-        for i in range(self.n):
-            dist_matrix[i, i] = 0.0
-            for j, dist in lengths[i].items():
-                dist_matrix[i, j] = dist
-        return dist_matrix
+            self.graph, weight=self.weight))
 
-    # def _build_rips_complex(self):
-    #     rips = gudhi.RipsComplex(
-    #         distance_matrix=self.dist_matrix, max_edge_length=self.max_filtration)
-    #     return rips.create_simplex_tree(max_dimension=2)
+        dist_matrix = {}
+        for v in self.graph.nodes:
+            dist_matrix[v] = {}
+            for u in self.graph.nodes:
+                if v == u:
+                    dist_matrix[v][u] = 0
+                elif u in lengths[v]:
+                    dist_matrix[v][u] = lengths[v][u]
+                else:
+                    # If no path found
+                    dist_matrix[v][u] = np.inf
+
+        return dist_matrix
 
     def _cpm_score(self, communities: list, gamma: float = 1.0):
         """
@@ -101,7 +123,7 @@ class FiltrationClustering:
         # if self.reference_graph:
         #     G = self.reference_graph
         # else:
-        G = self.original_graph
+        G = self.graph
         # Map node -> community index (assign first community if overlaps)
         node_to_comm = self._get_clustering(communities)
 
@@ -127,14 +149,10 @@ class FiltrationClustering:
         '''
         Evaluate provided clustering
         '''
-        # if self.reference_graph:
-        #     G = self.reference_graph
-        # else:
-        G = self.original_graph
 
         if metric == 'modularity':
             score = nx.community.modularity(
-                G,
+                self.graph,
                 self._get_communities(clustering),
                 weight=self.weight)
         elif metric == 'cpm':
@@ -168,42 +186,68 @@ class FiltrationClustering:
         if epsilon in self.clusterings:
             return self.clusterings[epsilon]
 
-        # Filter simplices up to epsilon and dimension k (cliques up to size k)
-        # simplices_at_eps = [
-        #     s for s in self.all_simplices if s[1] <= epsilon and len(s[0]) <= self.k]
+        # Get list of feasible triangles
+        triangle_queue = set(
+            [tuple(sorted(t)) for t, d in self.triangulation.items() if d <= epsilon])
 
-        # Extract edges for graph construction
-        # edges = [tuple(s[0]) for s in simplices_at_eps if len(s[0]) == 2]
-        edges = [(self.node_to_id[node_a], self.node_to_id[node_b]) for node_a, node_b,
-                 d in self.original_graph.edges(data=True) if d[self.weight] <= epsilon]
+        communities = []
 
-        # Build graph at this filtration
-        G_eps = nx.Graph()
-        G_eps.add_nodes_from(range(self.n))
-        G_eps.add_edges_from(edges)
+        while triangle_queue:
+            # Start with some triangle
+            start = triangle_queue.pop()
+            # Cluster will be formed around it
+            cluster = set(start)
+            # Get adjacent triangles
+            neighbours_queue = [t for e in combinations(
+                start, 2) for t in self.triangle_cobound[e] if t in triangle_queue]
+            # Remove them from the queue
+            for t in neighbours_queue:
+                triangle_queue.remove(t)
+            # print(f'Start: {start} | next: {neighbours_queue}')
+            # Iterate over neighbours
+            while neighbours_queue:
+                # Get new triangle
+                next_triangle = neighbours_queue.pop()
+                # Add it to cluster
+                cluster.update(set(next_triangle))
+                # Append new unseen triangles
+                for e in combinations(next_triangle, 2):
+                    # Check if we have not visited it already
+                    for t in self.triangle_cobound[e]:
+                        if t in triangle_queue:
+                            # print(f'Cluster: {cluster} | next: {neighbours_queue}')
+                            neighbours_queue.append(t)
+                            # Remove them from the queue
+                            triangle_queue.remove(t)
+            # Add merged cluster to communities
+            communities.append(cluster)
 
-        # # Build graph copy
-        # G_eps = self.original_graph.copy()
-        # # Remove edges with weight > epsilon
-        # edges_to_remove = [(u, v) for u, v, d in G_eps.edges(data=True)
-        #                    if d.get(self.weight, 1.0) > epsilon]
-        # G_eps.remove_edges_from(edges_to_remove)
+        # # Extract edges for graph construction
+        # edges = [(node_a, node_b) for node_a, node_b, d in self.graph.edges(
+        #     data=True) if d[self.weight] <= epsilon]
 
-        # Extract k-cliques directly from simplices
-        # cliques_k = [tuple(s[0])
-        #              for s in simplices_at_eps if len(s[0]) == self.k]
+        # # Build graph at this filtration
+        # G_eps = self.graph.edge_subgraph(edges)
 
-        # CPM with precomputed cliques
-        # communities = [set(c) for c in nx.algorithms.community.k_clique_communities(
-        #     G_eps, self.k, cliques=cliques_k)]
-        communities = [
-            set(c) for c in nx.algorithms.community.k_clique_communities(G_eps, self.k)]
+        # if self.triangulation is None:
+        #     communities = [
+        #         set(c) for c in nx.algorithms.community.k_clique_communities(G_eps, self.k)]
+        # else:
+        #     # Filter simplices up to epsilon
+        #     cliques_eps = [t for t, time in self.triangulation.items()
+        #                    if time <= epsilon]
+
+        #     # CPM with precomputed cliques
+        #     communities = [set(c) for c in nx.algorithms.community.k_clique_communities(
+        #         G_eps, self.k, cliques=cliques_eps)]
 
         # Map node -> community index
         node_to_comm = self._get_clustering(communities)
 
         # Assign unclustered nodes using original graph distances
-        unclustered_nodes = set(range(self.n)) - set(node_to_comm.keys())
+        unclustered_nodes = set(self.graph.nodes) - set(node_to_comm.keys())
+
+        # return G_eps, communities, unclustered_nodes, node_to_comm
 
         for node in unclustered_nodes:
             min_dist = np.inf
@@ -211,7 +255,7 @@ class FiltrationClustering:
             for comm_idx, comm in enumerate(communities):
                 # Use precomputed distance matrix for node-to-community distances
                 dist_to_comm = min(
-                    self.dist_matrix[node, member] for member in comm)
+                    self.dist_matrix[node][member] for member in comm)
                 if dist_to_comm < min_dist:
                     min_dist = dist_to_comm
                     closest_comm = comm_idx
@@ -222,18 +266,14 @@ class FiltrationClustering:
                 node_to_comm[node] = len(communities)
                 # communities.append({node})
 
-        # Convert back to original node labels
-        clustering = {self.id_to_node[node]
-            : comm for node, comm in node_to_comm.items()}
-
         # Store clustering
         if save_clustering:
-            self.clusterings[epsilon] = clustering
+            self.clusterings[epsilon] = node_to_comm
 
         # Release memory
-        del G_eps
+        # del G_eps
 
-        return clustering
+        return node_to_comm
 
     def _get_clustering(self, communities: list) -> dict:
         '''
@@ -365,9 +405,9 @@ class FiltrationClustering:
             Dict of border nodes with their border clusters
         """
         border_nodes = {}
-        for node in self.original_graph.nodes():
+        for node in self.graph.nodes():
             node_comm = clustering[node]
-            for neighbor in self.original_graph._adj[node]:
+            for neighbor in self.graph._adj[node]:
                 if clustering[neighbor] != node_comm:
                     if node in border_nodes:
                         border_nodes[node].add(clustering[neighbor])
@@ -421,7 +461,6 @@ class FiltrationClustering:
                         break  # Move on to next node after improvement
 
                 if improved:
-                    # print(f'Score improved to {current_quality}')
                     break  # Restart iteration after any improvement
 
             if not improved:
@@ -466,29 +505,25 @@ class FiltrationClustering:
 
         # Node colors in original graph order
         node_colors = [color_map(comm_to_color[clustering[node]])
-                       for node in self.original_graph.nodes()]
+                       for node in self.graph.nodes()]
 
-        # Extract edges at epsilon (same as in cluster_at)
-        # simplices_at_eps = [
-        #     s for s in self.all_simplices if s[1] <= epsilon and len(s[0]) == 2]
-        # edges_at_eps = [tuple(s[0]) for s in simplices_at_eps]
         plt.figure(figsize=(8, 6))
 
         if epsilon:
             plt.title(f'FiltrationClustering at ε={epsilon:.4f}, k={self.k}')
             edges = [(node_a, node_b) for node_a, node_b,
-                     d in self.original_graph.edges(data=True) if d[self.weight] <= epsilon]
+                     d in self.graph.edges(data=True) if d[self.weight] <= epsilon]
         else:
             plt.title('FiltrationClustering')
             edges = [(node_a, node_b) for node_a, node_b,
-                     d in self.original_graph.edges(data=True)]
+                     d in self.graph.edges(data=True)]
 
-        nx.draw_networkx_nodes(self.original_graph, self.pos,
+        nx.draw_networkx_nodes(self.graph, self.pos,
                                node_color=node_colors, node_size=300, cmap=color_map)
         # plot only filtration edges
-        nx.draw_networkx_edges(self.int_graph, self.pos,
+        nx.draw_networkx_edges(self.graph, self.pos,
                                edgelist=edges, alpha=0.5)
-        nx.draw_networkx_labels(self.original_graph, self.pos)
+        nx.draw_networkx_labels(self.graph, self.pos)
 
         plt.axis('off')
         plt.show()
