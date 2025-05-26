@@ -222,25 +222,6 @@ class FiltrationClustering:
             # Add merged cluster to communities
             communities.append(cluster)
 
-        # # Extract edges for graph construction
-        # edges = [(node_a, node_b) for node_a, node_b, d in self.graph.edges(
-        #     data=True) if d[self.weight] <= epsilon]
-
-        # # Build graph at this filtration
-        # G_eps = self.graph.edge_subgraph(edges)
-
-        # if self.triangulation is None:
-        #     communities = [
-        #         set(c) for c in nx.algorithms.community.k_clique_communities(G_eps, self.k)]
-        # else:
-        #     # Filter simplices up to epsilon
-        #     cliques_eps = [t for t, time in self.triangulation.items()
-        #                    if time <= epsilon]
-
-        #     # CPM with precomputed cliques
-        #     communities = [set(c) for c in nx.algorithms.community.k_clique_communities(
-        #         G_eps, self.k, cliques=cliques_eps)]
-
         # Map node -> community index
         node_to_comm = self._get_clustering(communities)
 
@@ -350,7 +331,7 @@ class FiltrationClustering:
 
         return best_epsilon
 
-    def cluster(self, metric: str = 'modularity', quantiles: list = np.linspace(1e-1, 1, 100), n_jobs: int = 7, verbose: bool = True):
+    def cluster(self, metric: str = 'modularity', quantiles: list = np.linspace(1e-1, 1, 100), n_jobs: int = 1, verbose: bool = True):
         """
         Perform filtration clustering
 
