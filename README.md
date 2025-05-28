@@ -15,17 +15,17 @@ Filtration Clustering applies a modified clique percolation technique [^2] to de
 
 
 # Contents
-- `scripts` contain main algorithms
-- `notebooks/` - experiments with metric graphs
-- - `notebooks/syntetic_example.ipynb` - simple example of how clustering is done
-- - `clustering_comparison.ipynb` - clustering of city graphs
-- `transport_clustering_experiments/` contains VRP benchmarks
-- - `transport_model_syntetic.ipynb` - experiment with generated graph of deliveries
-- - `transport_model.ipynb` - experiment with real data of taxi deliveries
-- `ground_truth_clustering_experiment/experiment.ipynb` - clustering of graphs with known ground truth communities
+- [`scripts`](./scripts/) contain main algorithms
+- [`notebooks/`](./notebooks/) - experiments with metric graphs
+- - [`notebooks/syntetic_example.ipynb`](./notebooks/syntetic_example.ipynb) - simple example of how clustering is done
+- - [`clustering_comparison.ipynb`](./notebooks/clustering_comparison.ipynb) - clustering of city graphs
+- [`transport_clustering_experiments/`](./transport_clustering_experiments/) contains VRP benchmarks
+- - [`transport_model_syntetic.ipynb`](./transport_clustering_experiments/transport_model_syntetic.ipynb) - experiment with generated graph of deliveries
+- - [`transport_model.ipynb`](./transport_clustering_experiments/transport_model.ipynb) - experiment with real data of taxi deliveries
+- [`ground_truth_clustering_experiment/experiment.ipynb`](./ground_truth_clustering_experiment/experiment.ipynb) - clustering of graphs with known ground truth communities
 
 Clustering performance is compared with Louvain [^3], Leiden [^4] and KMedoids [^5] algorithms.
-More details can be found in `Thesis.pdf`.
+More details can be found in [`Thesis.pdf`](Thesis.pdf).
 
 
 
